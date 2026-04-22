@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>API Capturer Pro</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>API Capturer Pro</h1>
+      <div class="controls">
+        <button id="clearBtn">Clear</button>
+        <div class="toggle-container">
+          <label for="captureToggle">Capture:</label>
+          <input type="checkbox" id="captureToggle" checked>
+        </div>
+      </div>
+    </header>
+
+    <div class="filters">
+      <input type="text" id="searchInput" placeholder="Search URL...">
+      <select id="typeFilter">
+        <option value="all">All Types</option>
+        <option value="fetch">Fetch</option>
+        <option value="xhr">XHR</option>
+      </select>
+    </div>
+
+    <main>
+      <div id="requestList" class="request-list">
+        <!-- Requests will be injected here -->
+      </div>
+      <div id="requestDetail" class="request-detail hidden">
+        <div class="detail-header">
+          <button id="backBtn">&larr; Back</button>
+          <h2>Request Details</h2>
+          <button id="copyCurlBtn">Copy as cURL</button>
+        </div>
+        <div class="detail-content">
+          <section>
+            <h3>General</h3>
+            <div id="generalInfo"></div>
+          </section>
+          <section>
+            <h3>Request Headers</h3>
+            <pre id="requestHeaders"></pre>
+          </section>
+          <section>
+            <h3>Request Body</h3>
+            <pre id="requestBody"></pre>
+          </section>
+          <section>
+            <h3>Response Headers</h3>
+            <pre id="responseHeaders"></pre>
+          </section>
+          <section>
+            <h3>Response Body</h3>
+            <pre id="responseBody"></pre>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
