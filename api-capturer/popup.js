@@ -1,5 +1,9 @@
+const INTERESTING_KEYWORDS = ['login', 'auth', 'account', 'user', 'profile', 'token', 'signup', 'signin', 'identity', 'session', 'api'];
+const TRASH_KEYWORDS = ['analytics', 'telemetry', 'tracker', 'logger', 'pixel', 'collect', 'metrics', '.png', '.jpg', '.css', '.js', 'hotjar', 'google-analytics', 'fb-pixel'];
+
 let allRequests = [];
 let selectedRequest = null;
+let smartFilterEnabled = false;
 
 const requestList = document.getElementById('requestList');
 const requestDetail = document.getElementById('requestDetail');
@@ -9,6 +13,24 @@ const clearBtn = document.getElementById('clearBtn');
 const captureToggle = document.getElementById('captureToggle');
 const backBtn = document.getElementById('backBtn');
 const copyCurlBtn = document.getElementById('copyCurlBtn');
+
+// Add new UI elements for smart filter
+const filterBar = document.querySelector('.filters');
+const smartFilterBtn = createElement('button', 'smart-filter-btn', 'Smart Filter: OFF');
+smartFilterBtn.style.marginLeft = '10px';
+filterBar.appendChild(smartFilterBtn);
+
+const exportBtn = createElement('button', 'export-btn', 'Export JSON');
+exportBtn.style.marginLeft = '5px';
+filterBar.appendChild(exportBtn);
+
+// Replay button in detail view
+const replayBtn = createElement('button', 'replay-btn', 'Replay Request');
+replayBtn.style.backgroundColor = '#2ecc71';
+const detailHeader = document.querySelector('.detail-header');
+if (detailHeader) {
+    detailHeader.insertBefore(replayBtn, copyCurlBtn);
+}
 
 // Load initial data
 chrome.runtime.sendMessage({ type: 'GET_REQUESTS' }, (response) => {
@@ -36,19 +58,44 @@ function createElement(tag, className, textContent) {
     return el;
 }
 
+function isInteresting(url) {
+    const lowerUrl = url.toLowerCase();
+    return INTERESTING_KEYWORDS.some(keyword => lowerUrl.includes(keyword));
+}
+
+function isTrash(url) {
+    const lowerUrl = url.toLowerCase();
+    return TRASH_KEYWORDS.some(keyword => lowerUrl.includes(keyword));
+}
+
 function renderList() {
     const searchTerm = searchInput.value.toLowerCase();
     const type = typeFilter.value;
 
-    const filtered = allRequests.filter(req => {
+    let filtered = allRequests.filter(req => {
         const matchesSearch = req.url.toLowerCase().includes(searchTerm);
         const matchesType = type === 'all' || req.type === type;
-        return matchesSearch && matchesType;
+        const passesSmartFilter = !smartFilterEnabled || (isInteresting(req.url) && !isTrash(req.url));
+        return matchesSearch && matchesType && passesSmartFilter;
     });
 
     requestList.innerHTML = '';
+
+    if (filtered.length === 0) {
+        const msg = createElement('div', 'empty-message', allRequests.length === 0 ? 'No requests captured yet. Try refreshing the page!' : 'No requests match your filters.');
+        msg.style.padding = '20px';
+        msg.style.textAlign = 'center';
+        msg.style.color = '#666';
+        requestList.appendChild(msg);
+        return;
+    }
+
     filtered.forEach(req => {
         const item = createElement('div', 'request-item');
+        if (isInteresting(req.url)) {
+            item.classList.add('interesting');
+            item.style.borderLeft = '4px solid #f1c40f';
+        }
 
         const statusClass = req.status >= 200 && req.status < 300 ? 'success' : (req.status === 'Error' ? 'error' : '');
 
@@ -57,9 +104,37 @@ function renderList() {
         const urlSpan = createElement('span', 'url', req.url);
         urlSpan.title = req.url;
 
+        const actionsDiv = createElement('div', 'item-actions');
+        actionsDiv.style.marginLeft = 'auto';
+        actionsDiv.style.display = 'flex';
+        actionsDiv.style.gap = '5px';
+
+        const copyUrlBtn = createElement('button', 'mini-btn', 'URL');
+        copyUrlBtn.onclick = (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(req.url);
+            const orig = copyUrlBtn.textContent;
+            copyUrlBtn.textContent = 'OK';
+            setTimeout(() => copyUrlBtn.textContent = orig, 1000);
+        };
+
+        const copyBodyBtn = createElement('button', 'mini-btn', 'Body');
+        copyBodyBtn.onclick = (e) => {
+            e.stopPropagation();
+            const body = typeof req.requestBody === 'string' ? req.requestBody : JSON.stringify(req.requestBody);
+            navigator.clipboard.writeText(body || '');
+            const orig = copyBodyBtn.textContent;
+            copyBodyBtn.textContent = 'OK';
+            setTimeout(() => copyBodyBtn.textContent = orig, 1000);
+        };
+
+        actionsDiv.appendChild(copyUrlBtn);
+        if (req.requestBody) actionsDiv.appendChild(copyBodyBtn);
+
         item.appendChild(methodSpan);
         item.appendChild(statusSpan);
         item.appendChild(urlSpan);
+        item.appendChild(actionsDiv);
 
         item.onclick = () => showDetail(req);
         requestList.appendChild(item);
@@ -107,6 +182,25 @@ function formatBody(body) {
     }
 }
 
+async function replayRequest(req) {
+    replayBtn.disabled = true;
+    replayBtn.textContent = 'Replaying...';
+    try {
+        const response = await fetch(req.url, {
+            method: req.method,
+            headers: req.requestHeaders,
+            body: ['GET', 'HEAD'].includes(req.method) ? null : req.requestBody
+        });
+        const text = await response.text();
+        alert(`Replay Status: ${response.status}\n\nResponse snippet: ${text.substring(0, 200)}...`);
+    } catch (e) {
+        alert(`Replay Failed: ${e.message}`);
+    } finally {
+        replayBtn.disabled = false;
+        replayBtn.textContent = 'Replay Request';
+    }
+}
+
 function generateCurl(req) {
     let curl = `curl '${req.url.replace(/'/g, "'\\''")}' \\\n  -X '${req.method}'`;
 
@@ -137,6 +231,27 @@ clearBtn.onclick = () => {
 
 captureToggle.onchange = () => {
     chrome.runtime.sendMessage({ type: 'SET_CAPTURING', value: captureToggle.checked });
+};
+
+smartFilterBtn.onclick = () => {
+    smartFilterEnabled = !smartFilterEnabled;
+    smartFilterBtn.textContent = `Smart Filter: ${smartFilterEnabled ? 'ON' : 'OFF'}`;
+    smartFilterBtn.style.backgroundColor = smartFilterEnabled ? '#2ecc71' : '#3498db';
+    renderList();
+};
+
+exportBtn.onclick = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(allRequests, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href",     dataStr);
+    downloadAnchorNode.setAttribute("download", "api_captures.json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+};
+
+replayBtn.onclick = () => {
+    if (selectedRequest) replayRequest(selectedRequest);
 };
 
 backBtn.onclick = () => {
